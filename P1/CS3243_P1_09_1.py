@@ -32,7 +32,7 @@ class Puzzle(object):
         vis = {} #bool array
         q = deque() #queue for BFS
         state_str = ''.join(str(e) for e in self.init_state_flat)
-        state = State(self.actions, self.init_state_int, self.width, self.zero)
+        state = State(self.init_state_int, self.width, self.zero)
         q.append(state)
         vis[state.state_int] = True
 
@@ -43,9 +43,9 @@ class Puzzle(object):
                 next_state = curr_puzzle.next_state(d)
                 if not next_state or next_state.state_int in vis: 
                     continue
-                if next_state.state_int == self.make_int(self.goal_state):
-                    print 'fn took %.2f seconds' % (time() - st) #to check time
-                    return next_state.actions
+                if next_state.state_int == self.goal_int:
+##                    print 'fn took %.2f seconds' % (time() - st) #to check time
+                    return next_state.get_actions()
                 q.append(next_state)
                 vis[next_state.state_int] = True    
     
@@ -89,21 +89,14 @@ class Puzzle(object):
         return even_inv == zrow % 2
 
 class State(object):
-    def __init__(self, actions, state_int, width, zero):
-        self.actions = actions
-        
+    def __init__(self, state_int, width, zero, move=None, prev_state=None):        
         self.state_int = state_int        
         self.width = width
         self.k = self.width * self.width
         self.zero = zero #location of 0, index 0 at top left
-        self.set_state_str()
-
-    def set_state_str(self):
-        state_str = str(self.state_int)
-        if len(state_str) < self.k:
-            self.state_str = '0' + state_str
-        else:
-            self.state_str = state_str
+        self.move = move
+        self.prev_state = prev_state
+        self.state_str = str(state_int)
 
     def get_next_zero(self, direction):
         d = {'DOWN' : -self.width, 'UP' : self.width, 'LEFT' : 1, 'RIGHT' : -1}
@@ -127,23 +120,34 @@ class State(object):
         next_zero = self.get_next_zero(direction)
         if next_zero is None: return # return if out of bounds
         
-        # Set init variables for new puzzle state
-        new_actions = list(self.actions) # This step is still too slow
-        new_actions.append(direction)
         # Get next state as an int
         new_state = self.next_state_int(next_zero)
         
 
         # Initialize new  state
-        return State(new_actions, new_state, self.width, next_zero)
+        return State(new_state, self.width, next_zero, direction, self)
 
     # Returns next state_int given an index
     def next_state_int(self, idx):
+        if len(self.state_str) < self.k:
+            idx -= 1
         num = int(self.state_str[idx])
+        if len(self.state_str) < self.k:
+            idx += 1
         new_int = self.state_int
-        new_int -= num * 10 ** (self.k - 1 - idx)
         new_int += num * 10 ** (self.k - 1 - self.zero)
+        new_int -= num * 10 ** (self.k - 1 - idx)
+        
         return new_int
+
+    # To traverse the set of previous moves
+    def get_actions(self):
+        lst = []
+        curr_state = self
+        while curr_state.move:
+            lst.append(curr_state.move)
+            curr_state = curr_state.prev_state
+        return lst[::-1] #reversed
         
 
 if __name__ == "__main__":
