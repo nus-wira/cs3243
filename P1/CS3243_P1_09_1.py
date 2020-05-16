@@ -16,7 +16,11 @@ class Puzzle(object):
         self.init_state = init_state
         self.goal_state = goal_state
         self.actions = list()
-        self.zero = (0,0) #location of 0
+        self.init_state_flat = self.flatten(init_state)
+        self.init_state_int = self.make_int(init_state)
+        self.goal_int = self.make_int(self.goal_state)
+        self.width = len(init_state)
+        self.zero = 0 #location of 0, index 0 at top left
 
     def solve(self):
         #TODO
@@ -24,52 +28,40 @@ class Puzzle(object):
         st = time()
         if not self.solvable():
             return ["UNSOLVABLE"]
-        dir = ('UP', 'DOWN', 'LEFT', 'RIGHT')
+        direction = ('UP', 'DOWN', 'LEFT', 'RIGHT')
         vis = {} #bool array
-        q = deque()
-        q.append(self)
-        vis[self.make_int()] = True 
-        # c = 1
+        q = deque() #queue for BFS
+        state_str = ''.join(str(e) for e in self.init_state_flat)
+        state = State(self.actions, self.init_state_int, self.width, self.zero)
+        q.append(state)
+        vis[state.state_int] = True
+
+        #BFS
         while q:
-            # c+=1
-            # if c>5: break
             curr_puzzle = q.popleft()
-            for d in dir:
+            for d in direction:
                 next_state = curr_puzzle.next_state(d)
-                # if next state invalid or visited skip
-                # if next_state: 
-                    # print(next_state.make_int())
-                    # print("vis", vis)
-                    # print (next_state.init_state in vis)
-                if (not next_state) or next_state.make_int() in vis: 
-                    continue 
-                if next_state.init_state == self.goal_state:
-                    # print (next_state.actions)
-                    print 'fn took %.2f seconds' % (time() - st)
+                if not next_state or next_state.state_int in vis: 
+                    continue
+                if next_state.state_int == self.make_int(self.goal_state):
+                    print 'fn took %.2f seconds' % (time() - st) #to check time
                     return next_state.actions
                 q.append(next_state)
-                vis[next_state.make_int()] = True
-         # sample output 
+                vis[next_state.state_int] = True    
     
-    
-    # you may add more functions if you think is useful
-    def set_actions(self, actions):
-        self.actions = actions
-    
-    def set_zero(self, zero):
-        self.zero = zero
-    
-    def flatten(self):
-        return [num for row in self.init_state for num in row]
-    
-    def make_int(self):
-        return int(''.join(str(e) for e in self.flatten()))
+    # you may add more functions if you think is useful    
+    def flatten(self, state):
+        return [num for row in state for num in row]
+
+    # Used for representation of board as k digit num
+    def make_int(self, state):
+        return int(''.join(str(e) for e in self.flatten(state)))
     
     # To determine solvability
     def solvable(self):
-        width = len(self.init_state)
-        lst = self.flatten()
-        size = len(lst)
+        width = self.width
+        lst = self.init_state_flat
+        size = self.width * self.width
         # Use conditions of inversions
         # https://www.cs.bham.ac.uk/~mdr/teaching/modules04/java2/TilesSolvability.html
         inv, row, zrow = 0, 0, 0
@@ -79,7 +71,7 @@ class Puzzle(object):
             # Store zero row
             if (lst[i] == 0):
                 zrow = row
-                self.set_zero((row, i % width))
+                self.zero = row * width + i % width
                 continue
             # Check for inversions here
             for j in range(i + 1, size):
@@ -96,51 +88,63 @@ class Puzzle(object):
         # if inv is even, blank row is odd from bottom (1-based)
         return even_inv == zrow % 2
 
-    
-    # def find_zero(self, state):
-        # for i in range(len(state)):
-            # for j in range(len(state[0])):
-                # if state[i][j] == 0:
-                    # return i, j
-                    
-    # Returns a puzzle state given a direction
-    def next_state(self, dir):
-        i, j = self.zero
+class State(object):
+    def __init__(self, actions, state_int, width, zero):
+        self.actions = actions
         
-        r, c = self.get_direction(dir)
-        n_i, n_j = i + r, j + c
-        # If out of bounds invalid, return None
-        if (n_i < 0 or n_i >= len(self.init_state[0]) \
-            or n_j < 0 or n_j >= len(self.init_state)): 
-            return None
+        self.state_int = state_int        
+        self.width = width
+        self.k = self.width * self.width
+        self.zero = zero #location of 0, index 0 at top left
+        self.set_state_str()
+
+    def set_state_str(self):
+        state_str = str(self.state_int)
+        if len(state_str) < self.k:
+            self.state_str = '0' + state_str
+        else:
+            self.state_str = state_str
+
+    def get_next_zero(self, direction):
+        d = {'DOWN' : -self.width, 'UP' : self.width, 'LEFT' : 1, 'RIGHT' : -1}
+        
+        #check for RIGHT LEFT out of bounds
+        if direction == 'LEFT' and (self.zero % self.width) + 1 == self.width or \
+           direction == 'RIGHT' and self.zero % self.width == 0:
+            return
+        
+        new_zero = self.zero + d[direction]
+        
+
+        # check for UP DOWN out of bounds
+        if new_zero < 0 or new_zero >= self.k:
+            return
+        
+        return new_zero
+
+    # Returns a puzzle state given a direction
+    def next_state(self, direction):
+        next_zero = self.get_next_zero(direction)
+        if next_zero is None: return # return if out of bounds
         
         # Set init variables for new puzzle state
-        new_zeros = (n_i, n_j)
-        new_actions = list(self.actions)
-        new_actions.append(dir)
-        next_num = self.init_state[n_i][n_j]
-        # Copy the current_state
-        new_state = [row[:] for row in self.init_state]
+        new_actions = list(self.actions) # This step is still too slow
+        new_actions.append(direction)
+        # Get next state as an int
+        new_state = self.next_state_int(next_zero)
         
-        new_state[i][j] = next_num
-        new_state[n_i][n_j] = 0
-        # self.printg(new_state)
-        # Initialize new puzzle state
-        new_puzzle = Puzzle(new_state, self.goal_state)
-        new_puzzle.set_actions(new_actions)
-        new_puzzle.set_zero(new_zeros)
-        return new_puzzle
-    
-    def get_direction(self, dir):
-        dict = {'UP' : (1,0), 'DOWN' : (-1,0), 'RIGHT' : (0,-1), 'LEFT' : (0,1)}
-        return dict[dir]
-    
-    def printg(self, grid):
-        for row in grid:
-            print(row)
-        print()
 
+        # Initialize new  state
+        return State(new_actions, new_state, self.width, next_zero)
 
+    # Returns next state_int given an index
+    def next_state_int(self, idx):
+        num = int(self.state_str[idx])
+        new_int = self.state_int
+        new_int -= num * 10 ** (self.k - 1 - idx)
+        new_int += num * 10 ** (self.k - 1 - self.zero)
+        return new_int
+        
 
 if __name__ == "__main__":
     # do NOT modify below
