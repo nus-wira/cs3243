@@ -3,6 +3,7 @@
 
 import os
 import sys
+from heapq import heappop, heappush
 from collections import deque
 
 # Running script on your own - given code can be run with the command:
@@ -13,26 +14,28 @@ class Puzzle(object):
         # you may add more attributes if you think is useful
         self.init_state = init_state
         self.goal_state = goal_state
-        self.frontier = deque()
-        self.actions = deque()
+        self.pq = list()
         self.visited = set()
         self.n = len(self.init_state)
+        self.n_square = self.n * self.n
+        self.goal_state_index_list = self.index(goal_state)
         
-
     def solve(self):
         if not self.check_solvable(self.init_state):
             return ['UNSOLVABLE']
 
         zero_index = self.find_zero_index(self.init_state)
-        self.frontier.append((self.init_state, zero_index))
-        self.actions.append(list())
+        heuristic = self.heuristic(self.init_state)
+        cost = 0
+        heappush(self.pq, (cost + heuristic, cost, self.init_state, zero_index, list()))
         
         direction = {'UP':(1,0), 'DOWN':(-1,0), 'LEFT':(0,1), 'RIGHT':(0,-1)}
 
-        while self.frontier:
-            current_node, current_zero_index = self.frontier.popleft()
+        while self.pq:
+            total, current_cost, current_node, current_zero_index, action_list = heappop(self.pq)
+            if current_node == self.goal_state:
+                return action_list
             row, col = current_zero_index
-            action_list = self.actions.popleft()
             current_node_tuple = self.list_to_tuple(current_node)
             if current_node_tuple not in self.visited:
 
@@ -41,17 +44,36 @@ class Puzzle(object):
                 for i in direction:
                     move = self.move(current_node, row, col, i, direction)
                     if move and self.list_to_tuple(move) not in self.visited:
+                        
                         new_action_list = list(action_list)
                         new_action_list.append(i)
-                        if move == self.goal_state:
-                            return new_action_list
-                        self.actions.append(new_action_list)
+                        if current_node == self.goal_state:
+                            return action_list
                         r, c = direction[i]
-                        self.frontier.append((move, (row+r,col+c)))   
+                        new_heuristic = self.heuristic(move)
+                        new_cost = current_cost + 1
+                        heappush(self.pq, (new_heuristic + new_cost, new_cost, move, (row+r,col+c), new_action_list))
                 
         return ['UNSOLVABLE']
 
     # you may add more functions if you think is useful
+
+    def heuristic(self, state):
+        current_state_index_list = self.index(state)
+        manhattan_distance = 0
+        for i in range(self.n_square):
+            x_curr, y_curr = current_state_index_list[i]
+            x_goal, y_goal = self.goal_state_index_list[i]
+            manhattan_distance += abs(x_goal - x_curr) + abs(y_goal - y_curr)
+        return manhattan_distance
+    
+    def index(self, state):
+        index_list = [(0,0)] * (self.n_square)
+        for i in range(self.n):
+            for j in range(self.n):
+                index_list[state[i][j]] = (i,j)
+        return index_list
+
     
     def flatten(self, state):
         new_state = list()
