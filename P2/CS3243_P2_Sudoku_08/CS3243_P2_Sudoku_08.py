@@ -14,52 +14,58 @@ class Sudoku(object):
         self.puzzle = puzzle # self.puzzle is a list of lists
         self.ans = self.deepcopy(puzzle) # self.ans is a list of lists
         self.size = len(self.puzzle)
-        self.all_domains = [[list() for _ in range(self.size)] \
-                            for _ in range(self.size)]
-        self.pq = list()
-        self.constraints = [[list() for _ in range(self.size)] \
-                            for _ in range(self.size)]
+        self.all_domains = {}
+        self.all_degree = None
+        self.constraints = None
+        self.memo = {}
         
-        
+        #self.pq = list()
    
     
     def solve(self):
         # TODO: Write your code here
         self.get_constraints()
+        self.getRV()
+        #print(self.constraints[1][1])
+        #print(self.all_domains[(1,1)])
         
+        #print(self.constraints[7][6])
+
         if self.complete():
             return self.ans
 
-        
-        return self.backtrack(self)     
-            
-        # self.ans is a list of lists
-        return None
+        return self.backtrack()
 
     
     def get_constraints(self):
         '''Get a list of all (20) needed constraints for each square'''
+        self.constraints = [[list() for _ in range(self.size)] \
+                            for _ in range(self.size)]
         for i in range(self.size):
             for j in range(self.size):
                 for k in range(self.size):
                     if i != k:
-                        self.constraints[i][j].append((i,k))
-                    if j != k:
                         self.constraints[i][j].append((k,j))
+                    if j != k:
+                        self.constraints[i][j].append((i,k))
                 
                 box_r, box_c = self.getBox(i, j)
                 for r in range(3):
                     for c in range(3):
                         c_r, c_c = box_r + r, box_c + c
-                        if c_r == r or c_c == c: continue
+                        if c_r == i or c_c == j: continue
                         self.constraints[i][j].append((c_r,c_c))
             
                 
     
     # copy.deepcopy is slow
-    def deepcopy(self, state):
-        return list(map(list, state))
+    # 2d copy
+    def deepcopy(self, lsts):
+        return [list(lst) for lst in lsts]
 
+    # 3d copy
+    def deepercopy(self, lsts):
+        return [self.deepcopy(lst) for lst in lsts]
 
     def prints(self):
         for row in self.ans:
@@ -70,30 +76,81 @@ class Sudoku(object):
         if self.complete():
             return self.ans
         
-        self.getRV()
-        RV, deg, row, col = heappop(self.pq)
-        self.prints()
-        if RV == 0:
-            return
+        #self.getRV()
+
+
+        #RV, deg, row, col = heappop(self.pq)
         
-        print( self.leastCV(row, col))
-        
-        for cv, num in puzzle.leastCV(row, col, puzzle):
-##            print(row, col)
-##            print(puzzle.ans[row][col])
-##            print (cv, num)
-##            print(puzzle.ans)
-            n_puzzle = Sudoku(puzzle.ans)
-            n_puzzle.constraints = puzzle.constraints
-            n_puzzle.all_domains = copy.deepcopy(puzzle.all_domains)
+        row, col = self.getVar()
+        if row is None:
+            return False
+
+        ord_domain = self.leastCV(row, col)
+        #print(self.all_domains)
+        #self.prints()
+        #n_puzzle = Sudoku(self.ans)
+        #n_puzzle.constraints = self.constraints
+        #n_puzzle.all_domains = self.all_domains
+
+        domain = self.all_domains[(row,col)]
+        #print(row, col, domain)
+        del self.all_domains[(row,col)]
+
+        while ord_domain:
+            cv, num = heappop(ord_domain)
             
-            
-            if n_puzzle.inference(row, col, num):
-                print('test')
-                res = n_puzzle.backtrack(n_puzzle)
+            changed_doms = self.update_domains(num, row, col)
+
+            if self.inference(row, col, num):
+
+                res = self.backtrack()
                 if res:
                     return res
+            self.ans[row][col] = 0
+            self.revert_domains(changed_doms, num)
+        #add back the domain if unsuccessful
+        self.all_domains[(row,col)] = domain
+
+    def getVar(self):
+        minRV = min(x[0] for x in self.all_domains.values())
+        if minRV == 0:
+            return None, None
+        all_minRV = list(filter(lambda x: x[1][0] == minRV, self.all_domains.items() ))
+        all_minRV = [x[0] for x in all_minRV]
         
+        curVar = all_minRV[0]
+        minDeg = self.degree(*curVar)
+        if len(all_minRV) > 1:
+            
+            for i, j in all_minRV:
+                curDeg = self.degree(i,j)
+                if curDeg < minDeg:
+                    minDeg = curDeg
+                    curVar = (i,j)
+
+        return curVar
+    
+    def update_domains(self, num, row, col):
+        self.ans[row][col] = num
+        num -= 1
+        changed = []
+        for i, j in self.constraints[row][col]:
+            if self.ans[i][j]:
+                continue
+            if self.all_domains[(i,j)][1][num]:
+                self.all_domains[(i,j)][1][num] = False
+                self.all_domains[(i,j)][0] -= 1
+                changed.append((i,j))
+        return changed
+
+    def revert_domains(self, changed, num):
+
+        num -= 1
+        for i, j in changed:
+            #if self.ans[i][j]:
+            #    continue
+            self.all_domains[(i,j)][1][num] = True
+            self.all_domains[(i,j)][0] += 1
     
     def complete(self):
         '''Check for complete puzzle'''
@@ -105,15 +162,20 @@ class Sudoku(object):
     
     def getRV(self):
         '''Get Remaining Values as priority queue'''
+        #self.all_domains =  [[list() for _ in range(self.size)] \
+        #                    for _ in range(self.size)]
+        #self.all_domains = {}
         for i in range(self.size):
             for j in range(self.size):
                 # skip if already filled
                 if self.ans[i][j]: continue
                 
                 domain = self.getDomain(i,j)
-                self.all_domains[i][j] = domain
+                rv = domain.count(True)
+                #self.all_domains[i][j] = domain
+                self.all_domains[(i,j)] = [rv, domain]
                 
-                heappush(self.pq, (domain.count(True), self.degree(i,j), i, j))
+                #heappush(self.pq, (domain.count(True), self.degree(i,j), i, j))
 
     def getDomain(self, row, col):
         '''Get Domain for a single cell'''
@@ -122,8 +184,8 @@ class Sudoku(object):
 
         # Check rows and columns
         for i in range(self.size):
-            num_r = self.puzzle[row][i]
-            num_c = self.puzzle[i][col]
+            num_r = self.ans[row][i]
+            num_c = self.ans[i][col]
             if num_r:
                 cell[num_r - 1] = False
             if num_c:
@@ -133,7 +195,7 @@ class Sudoku(object):
         box_r, box_c = self.getBox(row, col)
         for i in range(3):
             for j in range(3):
-                num = self.puzzle[box_r + i][box_c + j]
+                num = self.ans[box_r + i][box_c + j]
                 if num:
                     cell[num - 1] = False
 
@@ -165,11 +227,9 @@ class Sudoku(object):
         count = 0
         num -= 1 # 0-based
         for i in range(self.size):
-##            print(self.all_domains[row])
-##            print(self.ans[row])
-            if puzzle.ans[row][i] == 0 and i != col and puzzle.all_domains[row][i][num]:
+            if self.ans[row][i] == 0 and i != col and self.all_domains[(row,i)][1][num]:
                 count += 1
-            if puzzle.ans[i][col] == 0 and i != row and puzzle.all_domains[i][col][num]:
+            if self.ans[i][col] == 0 and i != row and self.all_domains[(i,col)][1][num]:
                 count += 1
 
         box_r, box_c = self.getBox(row, col)
@@ -178,24 +238,24 @@ class Sudoku(object):
                 c_r, c_c = box_r + i, box_c + j
                 # skip if already accounted for in row/col check above
                 if c_r == row or c_c == col: continue
-                if puzzle.ans[c_r][c_c] == 0 and puzzle.all_domains[c_r][c_c][num]:
+                if self.ans[c_r][c_c] == 0 and self.all_domains[(c_r,c_c)][1][num]:
                     count += 1
         return count
     
     def leastCV(self, row, col):
         lst = list()
         for i in range(self.size):
-            if puzzle.all_domains[row][col][i]:
+            if self.all_domains[(row,col)][1][i]:
                 heappush(lst, (self.cv(row,col,i+1), i+1))
         return lst
 
     def inference(self, row, col, num):
-        self.ans[row][col] = num
+        #self.ans[row][col] = num
+        #if self.complete():
+        #    return True
         num -= 1
-##        print(row, col, num)
-##        print(self.ans[row][col])
-##        print(row, col)
-##        print(self.constraints[row][col])
+        #changed = []
+        
         for i, j in self.constraints[row][col]:
 
             # skip if already assigned
@@ -203,15 +263,48 @@ class Sudoku(object):
             if self.ans[i][j]:
                 continue
 
-            self.all_domains[i][j][num] = False
-            remaining = self.all_domains[i][j]
-            remain = remaining.count(True)
+            #remain = self.all_domains[(i,j)][0]
+            if self.all_domains[(i,j)][1][num]:
+                self.all_domains[(i,j)][1][num] = False
+                self.all_domains[(i,j)][0] -= 1
+                #remain -= 1
+            
+            else: #already constrained before
+                continue
+            
+            #remaining = self.all_domains[(i,j)][1]
+            remain = self.all_domains[(i,j)][0]
+            valid = True
             if remain == 0:
-                return False
+                #self.all_domains[(i,j)][1][num] = True
+                #self.all_domains[(i,j)][0] += 1
+                valid = False
+                #return False
             if remain == 1:
-                if not self.inference(row, col, remaining.index(True) + 1):
-                    return False
+            #    #n_puzzle = Sudoku(self.ans)
+            #    #n_puzzle.constraints = self.constraints
+            #    #n_puzzle.all_domains = self.deepercopy(self.all_domains)
+                domain = self.copy_domain(i,j)
+                del self.all_domains[(i,j)]
+                n_num = remaining.index(True) + 1
+                self.ans[i][j] = n_num
+                valid = self.inference(i, j, n_num)
+                self.all_domains[(i,j)] = domain
+                self.ans[i][j] = 0
+
+                #if not self.inference(i,j, n_num):
+                #    return False
+            
+            self.all_domains[(i,j)][1][num] = True
+            self.all_domains[(i,j)][0] += 1
+            if not valid:
+                return False
+
         return True
+
+    def copy_domain(self, i, j):
+        domain = self.all_domains[(i,j)]
+        return [domain[0],list(domain[1])]
                 
         
 
