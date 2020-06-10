@@ -4,6 +4,7 @@
 import sys
 import copy
 from heapq import heappop, heappush
+from time import time
 
 # Running script: given code can be run with the command:
 # python file.py, ./path/to/init_state.txt ./output/output.txt
@@ -15,16 +16,24 @@ class Sudoku(object):
         self.ans = self.deepcopy(puzzle) # self.ans is a list of lists
         self.size = len(self.puzzle)
         self.all_domains = {}
+        self.all_degrees = None
         self.constraints = None
+        #self.st = time()
    
     
     def solve(self):
         # TODO: Write your code here
-        if self.complete():
-            return self.ans
 
+        # Sudoku Variables represented by (i,j) 
+        # corresponding to row and column (0-based)
+        # Sudoku Values are all numbers each variable can take - 0-9
+        # Sudoku Constraints are that each row, column, box consisting
+        # of 9 Variables can only have 1 occurence of each value
+        
+        # Get constraints, and remaining valid values for each variable
         self.get_constraints()
         self.getRV()
+        self.get_degrees()
 
         return self.backtrack()
 
@@ -35,16 +44,13 @@ class Sudoku(object):
 
     def complete(self):
         '''Check for complete puzzle, assumes valid starting board'''
-        for i in range(self.size):
-            for j in range(self.size):
-                if self.ans[i][j] == 0:
-                    return False
-        return True
+        return len(self.all_domains) == 0
     
     def get_constraints(self):
-        '''Get a list of all (20) needed constraints for each square'''
-        self.constraints = [[list() for _ in range(self.size)] \
-                            for _ in range(self.size)]
+        '''Get a 2d tuple array of all (20) constraints for each variable
+        Constraints are also variables'''
+        self.constraints = tuple(tuple(list() for _ in range(self.size)) \
+                            for _ in range(self.size))
         for i in range(self.size):
             for j in range(self.size):
                 for k in range(self.size):
@@ -61,7 +67,8 @@ class Sudoku(object):
                         self.constraints[i][j].append((c_r,c_c))
     
     def getRV(self):
-        '''Get Remaining Values in a dictionary'''
+        '''Get Remaining Values (RV) of each variable in a dictionary
+        RV is the values a variable can take - 0-9 if no constraints'''
         for i in range(self.size):
             for j in range(self.size):
                 # skip if already filled
@@ -70,6 +77,16 @@ class Sudoku(object):
                 domain = self.getDomain(i,j)
                 rv = domain.count(True)
                 self.all_domains[(i,j)] = [rv, domain]
+    
+    def get_degrees(self):
+        '''Get degree of each variable in a list of lists'''
+        self.all_degrees = [[0 for _ in range(self.size)] \
+                            for _ in range(self.size)]
+        for i in range(self.size):
+            for j in range(self.size):
+                # skip if already filled
+                if self.ans[i][j]: continue
+                self.all_degrees[i][j] = self.degree(i,j)
                
     def backtrack(self):
         '''Backtrack algorithm from AIMA'''
@@ -77,9 +94,12 @@ class Sudoku(object):
             return self.ans
         
         # Get next variable using MRV heuristic
-        row, col = self.getVar()
-        if row is None:
-            return False
+        var = self.getVar()
+        if var is None:
+            return
+        row, col = var
+
+        changed_degs = self.update_degrees(row, col)
 
         # Get order of domain using LCV heuristic
         ord_domain = self.leastCV(row, col)
@@ -108,46 +128,57 @@ class Sudoku(object):
 
         # Add back the domain for variable if unsuccessful
         self.all_domains[(row,col)] = domain
+        self.revert_degrees(changed_degs)
 
     def getVar(self):
-        '''Get variable with minimum remaining values'''
-        minRV = min(x[0] for x in self.all_domains.values())
-        if minRV == 0:
-            return None, None
-
-        # Get all variables with RV equal to minimum RV
-        all_minRV = tuple(filter(lambda x: x[1][0] == minRV, self.all_domains.items() ))
-        all_minRV = [x[0] for x in all_minRV]
+        '''Get variable with minimum remaining values (MRV)'''   
         
+        # Obtain a list of all var with RV == minRV
+        domain_items = self.all_domains.items()
+        all_min_var = [domain_items[0][0]]
+        minRV = domain_items[0][1][0]
+        for var, rv_domain in self.all_domains.items():
+            curRV = rv_domain[0]
+            if curRV < minRV:
+                minRV = curRV
+                all_min_var = [var]
+            elif curRV == minRV:
+                all_min_var.append(var)
+  
         # Obtain variable with minimum degree
-        curVar = all_minRV[0]
-        minDeg = self.degree(*curVar)
-        if len(all_minRV) > 1:
-            for i, j in all_minRV:
-                curDeg = self.degree(i,j)
-                if curDeg < minDeg:
-                    minDeg = curDeg
-                    curVar = (i,j)
+        cur_var = all_min_var[0]
+        #min_deg = self.degree(*cur_var)
+        min_deg = self.all_degrees[cur_var[0]][cur_var[1]]
+        if len(all_min_var) > 1:
+            for i, j in all_min_var:
+                cur_deg = self.all_degrees[i][j]
+                if cur_deg < min_deg:
+                    min_deg = cur_deg
+                    cur_var = (i,j)
 
-        return curVar
+        return cur_var
+
+    def update_degrees(self, row, col):
+        '''Updates all degree values with an assignment on variable row,col'''
+        changes = []
+        for i, j in self.constraints[row][col]:
+            if self.ans[i][j]: continue
+            self.all_degrees[i][j] -= 1
+            changes.append((i,j))
+        return changes
+
+    def revert_degrees(self, changes):
+        '''Reverts degree value changes made in update_degrees'''
+        for i,j in changes:
+            self.all_degrees[i][j] += 1
 
     def degree(self, row, col):
         '''Get the degree count of a variable'''
         count = 0
-        for i in range(self.size):
-            if self.ans[row][i] == 0:
-                count += 1
-            if self.ans[i][col] == 0:
-                count += 1
 
-        box_r, box_c = self.getBox(row, col)
-        for i in range(3):
-            for j in range(3):
-                c_r, c_c = box_r + i, box_c + j
-                # skip if already accounted for in row/col check above
-                if c_r == row or c_c == col: continue
-                if self.ans[c_r][c_c] == 0:
-                    count += 1
+        for i, j in self.constraints[row][col]:
+            if self.ans[i][j] == 0:
+                count += 1
         return count
     
     def update_domains(self, num, row, col):
@@ -168,60 +199,37 @@ class Sudoku(object):
         return changed
 
     def revert_domains(self, changed, num):
-        '''Revert domains if assignment is unsuccessful'''
+        '''Revert domains'''
         num -= 1 # 0-based indexing
         for i, j in changed:
             self.all_domains[(i,j)][1][num] = True
             self.all_domains[(i,j)][0] += 1
 
     def getDomain(self, row, col):
-        '''Get Domain for a single cell'''
+        '''Get Domain (RV) for a single cell'''
         # bool array, 0-8 corresponds to numbers 1-9
         cell = [True] * self.size
 
-        # Check rows and columns
-        for i in range(self.size):
-            num_r = self.ans[row][i]
-            num_c = self.ans[i][col]
-            if num_r:
-                cell[num_r - 1] = False
-            if num_c:
-                cell[num_c - 1] = False
-
-        # Check boxes
-        box_r, box_c = self.getBox(row, col)
-        for i in range(3):
-            for j in range(3):
-                num = self.ans[box_r + i][box_c + j]
-                if num:
-                    cell[num - 1] = False
+        for i, j in self.constraints[row][col]:
+            num = self.ans[i][j]
+            if num:
+                cell[num - 1] = False
 
         return cell
 
     def getBox(self, row, col):
         ''' Returns top left row, col variable for a box'''
         return row - row % 3, col - col % 3
-    
-    
 
     def cv(self, row, col, num):
         '''Constraining value (CV) for a specific num at a row, col'''
         count = 0
         num -= 1 # 0-based
-        for i in range(self.size):
-            if self.ans[row][i] == 0 and i != col and self.all_domains[(row,i)][1][num]:
-                count += 1
-            if self.ans[i][col] == 0 and i != row and self.all_domains[(i,col)][1][num]:
+
+        for i, j in self.constraints[row][col]:
+            if self.ans[i][j] == 0 and self.all_domains[(i,j)][1][num]:
                 count += 1
 
-        box_r, box_c = self.getBox(row, col)
-        for i in range(3):
-            for j in range(3):
-                c_r, c_c = box_r + i, box_c + j
-                # skip if already accounted for in row/col check above
-                if c_r == row or c_c == col: continue
-                if self.ans[c_r][c_c] == 0 and self.all_domains[(c_r,c_c)][1][num]:
-                    count += 1
         return count
     
     def leastCV(self, row, col):
@@ -242,39 +250,12 @@ class Sudoku(object):
                 continue
 
             if self.all_domains[(i,j)][1][num]:
-                self.all_domains[(i,j)][1][num] = False
-                self.all_domains[(i,j)][0] -= 1
+                remain = self.all_domains[(i,j)][0] - 1
             else: #already constrained before
                 continue
-            
-            remain = self.all_domains[(i,j)][0]
-            valid = True
 
             # If no remaining values left, invalid assignment
             if remain == 0:
-                valid = False
-            elif remain == 1:
-                # Similar to backtrack, delete domain of variable being assigned
-                domain = self.all_domain(i,j)
-                del self.all_domains[(i,j)]
-
-                # Get num to assign to variable i,j
-                n_num = remaining.index(True) + 1
-                self.ans[i][j] = n_num
-
-                # Recursive call on inference
-                valid = self.inference(i, j, n_num)
-
-                # Add back domain
-                self.all_domains[(i,j)] = domain
-                self.ans[i][j] = 0
-            
-            # Undo domain change
-            self.all_domains[(i,j)][1][num] = True
-            self.all_domains[(i,j)][0] += 1
-
-            # If result in invalid puzzle return False
-            if not valid:
                 return False
 
         return True
