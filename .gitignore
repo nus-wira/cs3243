@@ -3,7 +3,13 @@ public*
 *.txt
 *.pdf
 *.pyc
+
+test/
+VERSION
+
 */CS3243_P2_Pacman_08/*
 !*/CS3243_P2_Pacman_08/qlearningAgents.py
 !*/CS3243_P2_Pacman_08/featureExtractors.py
-test/
+!*/CS3243_P2_Pacman_08/mdp.py
+!*/CS3243_P2_Pacman_08/learningAgents.py
+!*/CS3243_P2_Pacman_08/util.py
