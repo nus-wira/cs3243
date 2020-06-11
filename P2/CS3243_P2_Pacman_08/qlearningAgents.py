@@ -107,7 +107,7 @@ class QLearningAgent(ReinforcementAgent):
             return action
         if util.flipCoin(self.epsilon):
             return random.choice(legalActions)
-        return self.computeActionFromQValues(state)
+        return self.getPolicy(state)
 
     def update(self, state, action, nextState, reward):
         """
@@ -121,7 +121,7 @@ class QLearningAgent(ReinforcementAgent):
         "*** YOUR CODE HERE ***"
         value = self.getQValue(state, action)
         self.QValues[state][action] = (1-self.alpha) * value + self.alpha * \
-            (reward + self.discount * self.computeValueFromQValues(nextState))
+            (reward + self.discount * self.getValue(nextState))
 
 
     def getPolicy(self, state):
@@ -196,7 +196,7 @@ class ApproximateQAgent(PacmanQAgent):
         "*** YOUR CODE HERE ***"
         w = self.getWeights()
         feats = self.featExtractor.getFeatures(state, action)
-        diff = reward + self.discount * self.computeValueFromQValues(nextState) - \
+        diff = reward + self.discount * self.getValue(nextState) - \
             self.getQValue(state, action)
         
         for feat in feats:
