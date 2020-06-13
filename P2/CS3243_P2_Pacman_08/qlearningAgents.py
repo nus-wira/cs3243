@@ -185,9 +185,7 @@ class ApproximateQAgent(PacmanQAgent):
           where * is the dotProduct operator
         """
         "*** YOUR CODE HERE ***"
-        w = self.getWeights()
-        feats = self.featExtractor.getFeatures(state, action)
-        return sum(w[feat] for feat in feats)
+        return self.featExtractor.getFeatures(state, action) * self.getWeights()
 
     def update(self, state, action, nextState, reward):
         """
